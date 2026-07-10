@@ -1,164 +1,86 @@
-# Square of Youth — Guide de démarrage RAG
+# Square of Youth — Assistant d'analyse de projets
 
-## Ce que ce système fait
+## L'idée
 
-Vous posez une question sur vos projets Erasmus+ en langage naturel.
-Le système trouve les projets passés les plus similaires dans votre base,
-et Claude génère une analyse de patterns et un rapport de viabilité.
+Square of Youth monte des projets Erasmus+ depuis des années : des dizaines de
+demandes de subvention, de rapports de fin de projet, de retours de
+participants. Toute cette expérience existe, mais elle est dispersée dans des
+fichiers, et personne ne la relit vraiment avant de monter le projet suivant.
 
----
+Cet outil sert à ça : poser une question sur un futur projet ("est-ce que ce
+type d'échange fonctionne bien avec ce format ?", "quels risques sur ce genre
+de thématique ?") et obtenir une réponse qui s'appuie sur nos propres projets
+passés — pas des généralités trouvées sur internet.
 
-## Structure des fichiers
+On peut aussi lui donner des documents de référence (lignes directrices Erasmus+,
+critères d'évaluation, notes internes...) pour qu'il les prenne en compte dans
+ses réponses, en plus de notre historique de projets.
 
-```
-square-of-youth/
-├── scripts/
-│   ├── 01_setup_supabase.sql     ← à coller dans Supabase
-│   ├── 02_embed_and_store.py     ← indexe vos projets
-│   └── 03_analyze_with_claude.py ← analyse + rapport
-├── config/
-│   └── .env.example              ← template pour vos clés API
-├── requirements.txt
-└── README.md
-```
+## Comment ça fonctionne, en gros
 
----
+1. **Les projets passés sont stockés dans une base de données** (Supabase),
+   avec toutes leurs infos : pays, participants, thématique, score de
+   satisfaction, points forts/faibles, leçons apprises.
+2. **Chaque projet est transformé en "empreinte" numérique** (un embedding)
+   qui capture son contenu. C'est ce qui permet de retrouver les projets les
+   plus proches d'une question donnée, même si les mots utilisés sont
+   différents.
+3. **Quand on pose une question**, l'outil retrouve les projets et documents
+   les plus pertinents, puis demande à une IA de rédiger une analyse à partir
+   de ces éléments — en précisant toujours si un point vient de notre
+   historique ou d'un document de référence.
 
-## Étape 1 — Créer votre compte Supabase (5 min)
+## Ce qu'il faut pour que ça tourne
 
-1. Allez sur **https://app.supabase.com**
-2. Cliquez "New project" → choisissez un nom (ex: `square-of-youth`)
-3. Choisissez la région **EU (Frankfurt)** pour RGPD
-4. Notez le mot de passe de la base (vous en aurez besoin plus tard)
-5. Attendez ~2 min que le projet se crée
+L'outil s'appuie sur trois services externes, chacun avec un compte et une
+clé API à créer :
 
-**Récupérer vos clés :**
-- Dans le menu gauche : `Settings → API`
-- Copiez `Project URL` et `anon public` key
+- **Supabase** — la base de données où sont stockés les projets et les
+  documents.
+- **Voyage AI** — génère les embeddings (l'"empreinte" numérique des textes).
+- **Groq** — fait tourner le modèle d'IA qui rédige les analyses.
 
----
+Ces clés vont dans un fichier `.env` à la racine du projet (non versionné,
+donc à recréer sur chaque machine). Python et les dépendances du fichier
+`requirements.txt` doivent être installés.
 
-## Étape 2 — Configurer la base de données (3 min)
+Les coûts sont faibles : Supabase et Voyage AI restent gratuits à notre
+échelle d'usage, seul Groq coûte réellement quelque chose (quelques euros par
+mois selon le nombre de questions posées).
 
-1. Dans Supabase, menu gauche : `SQL Editor`
-2. Cliquez `New query`
-3. Copiez-collez le contenu de `01_setup_supabase.sql`
-4. Cliquez `Run` (bouton vert en bas à droite)
-5. Vous devriez voir : `3 rows` dans les résultats (les projets de test)
+## Utiliser l'outil
 
----
+L'interface principale est `app.py`, une application Streamlit avec deux
+onglets :
 
-## Étape 3 — Créer vos clés API (10 min)
+- **Poser une question** — on écrit sa question (dans n'importe quelle
+  langue), l'outil cherche les projets et documents pertinents et génère une
+  analyse.
+- **Ajouter des documents de référence** — on dépose un PDF, il est
+  automatiquement découpé, indexé, et devient utilisable dans les réponses.
+  Pas besoin de toucher au code.
 
-### Voyage AI (embeddings)
-1. https://dash.voyageai.com → Sign up
-2. `API Keys` → `Create new key`
-3. Copiez la clé
+Pour lancer l'application : `streamlit run app.py`.
 
-### Anthropic (Claude)
-1. https://console.anthropic.com → Sign up
-2. `API Keys` → `Create Key`
-3. Copiez la clé
+Une version en ligne de commande existe aussi (`03_analyze_with_groq.py`), si
+on préfère poser des questions sans interface graphique.
 
----
+### Ajouter de nouveaux projets
 
-## Étape 4 — Installer Python et les dépendances (5 min)
+Les projets sont d'abord saisis dans deux Google Sheets (demandes de
+subvention et retours de fin de projet). Pour les faire entrer dans le
+système :
 
-```bash
-# Vérifier que Python est installé (version 3.10+)
-python --version
+1. `import_from_sheet.py` — récupère les nouvelles lignes des Sheets et les
+   ajoute à la base (sans embedding).
+2. `02_embed_and_store.py` — génère les embeddings des projets qui n'en ont
+   pas encore.
 
-# Créer un environnement virtuel (recommandé)
-python -m venv venv
-source venv/bin/activate    # Mac/Linux
-venv\Scripts\activate       # Windows
+Ces deux scripts ne retraitent que ce qui est nouveau : on peut les relancer
+à volonté sans dupliquer les projets déjà présents.
 
-# Installer les dépendances
-pip install -r requirements.txt
-```
-
----
-
-## Étape 5 — Configurer les variables d'environnement (2 min)
-
-```bash
-# Copier le template
-cp config/.env.example .env
-
-# Ouvrir .env dans votre éditeur et remplir les valeurs
-# SUPABASE_URL, SUPABASE_KEY, VOYAGE_API_KEY, ANTHROPIC_API_KEY
-```
-
----
-
-## Étape 6 — Indexer vos projets (quelques secondes par projet)
-
-```bash
-# Génère les embeddings des 3 projets de test
-python scripts/02_embed_and_store.py
-```
-
-Vous devriez voir :
-```
-→ 3 projets à indexer
-[1/3] Youth Exchange Budapest 2024
-  → Texte construit (412 caractères)
-  → Embedding généré (1536 dimensions)
-  ✓ Projet 1 — 'Youth Exchange Budapest 2024' indexé
-...
-✓ Terminé — 3 projets indexés
-```
-
----
-
-## Étape 7 — Analyser un nouveau projet
-
-```bash
-python scripts/03_analyze_with_claude.py
-```
-
-Modifiez le dictionnaire `nouveau_projet` dans le script
-avec les vraies données de votre prochain projet.
-
----
-
-## Ajouter vos vrais projets
-
-Dans `02_embed_and_store.py`, vous pouvez ajouter des projets
-directement en SQL dans Supabase (table `projects`),
-ou écrire un script d'import depuis Google Sheets / Excel.
-
-Pour chaque nouveau projet ajouté, relancez :
-```bash
-python scripts/02_embed_and_store.py
-```
-Le script ne re-génère que les embeddings manquants.
-
----
-
-## Coûts estimés (mensuel, usage Square of Youth)
-
-| Service       | Usage estimé          | Coût     |
-|---------------|-----------------------|----------|
-| Supabase      | < 500 Mo              | Gratuit  |
-| Voyage AI     | ~50 projets indexés   | ~0.01€   |
-| Claude API    | 20 analyses/mois      | ~5-10€   |
-| **Total**     |                       | **~10€** |
-
----
-
-## Questions fréquentes
+## Question fréquente
 
 **Les données sont-elles sécurisées ?**
-Oui. Supabase est hébergé en EU Frankfurt, conforme RGPD.
-Seule la clé `anon` est dans le code — elle ne donne accès
-qu'aux données que vous autorisez explicitement.
-
-**Que faire si un projet change ?**
-Mettez à jour la ligne dans Supabase, puis relancez
-`02_embed_and_store.py` — il re-génère l'embedding automatiquement
-si vous remettez `embedding` à NULL dans la base.
-
-**Peut-on interroger en hongrois ou anglais ?**
-Oui. Le modèle `voyage-multilingual-2` gère nativement
-le français, anglais, hongrois et les autres langues Erasmus+.
+Oui — la base Supabase est hébergée en Europe (Frankfurt), et la clé utilisée
+dans le code (`anon`) ne donne accès qu'aux données explicitement autorisées.
