@@ -1,4 +1,4 @@
-supabase==2.4.0
+supabase==2.31.0
 voyageai==0.2.3
 anthropic==0.26.0
 python-dotenv==1.0.1
