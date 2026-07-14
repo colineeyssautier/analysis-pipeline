@@ -26,54 +26,76 @@ supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
 voyage   = voyageai.Client(api_key=os.environ["VOYAGE_API_KEY"])
 
 
-# ── Fonction : construire le texte à embedder ────────────────
-def build_text_for_embedding(project: dict) -> str:
-    """
-    On construit un texte riche qui capture TOUTES les dimensions
-    importantes du projet. Plus ce texte est descriptif,
-    meilleure sera la recherche sémantique.
-    """
-    countries = ", ".join(project.get("partner_countries") or [])
-    tags      = ", ".join(project.get("theme_tags") or [])
+# ── Fonctions : construire les textes à embedder (une par facette) ──
+#
+# Au lieu d'un seul embedding qui mélange toutes les dimensions du
+# projet (thématique, logistique, qualitatif), on en construit trois
+# distincts. Cela évite qu'une recherche sur un aspect précis (ex :
+# "budget maîtrisé") soit diluée par le reste du texte du projet.
 
+def build_thematic_text(project: dict) -> str:
+    tags = ", ".join(project.get("theme_tags") or [])
     return f"""
 Projet : {project['name']}
 Type : {project['project_type']}
+Thématique : {project.get('theme', '')}
+Mots-clés : {tags}
+Objectifs : {project.get('objectives', '')}
+    """.strip()
+
+
+def build_logistics_text(project: dict) -> str:
+    countries = ", ".join(project.get("partner_countries") or [])
+    return f"""
+Projet : {project['name']}
 Pays hôte : {project.get('host_country', '')}
 Pays partenaires : {countries}
 Nombre de pays : {project.get('nb_countries', '')}
 Durée : {project.get('duration_days', '')} jours
 Participants : {project.get('nb_participants', '')}
-Thématique : {project.get('theme', '')}
-Mots-clés : {tags}
-Objectifs : {project.get('objectives', '')}
+Tranche d'âge : {project.get('age_range_min', '')}-{project.get('age_range_max', '')}
+Budget prévu : {project.get('budget_planned', '')}
+Budget réel : {project.get('budget_actual', '')}
+    """.strip()
+
+
+def build_qualitative_text(project: dict) -> str:
+    return f"""
+Projet : {project['name']}
 Score de satisfaction : {project.get('satisfaction_score', '')}/5
 Taux de complétion : {project.get('completion_rate', '')}%
 Points forts : {project.get('strengths', '')}
 Points faibles : {project.get('weaknesses', '')}
 Leçons apprises : {project.get('lessons', '')}
+Notes : {project.get('notes', '')}
     """.strip()
 
 
-# ── Fonction : générer un embedding ─────────────────────────
-def get_embedding(text: str) -> list[float]:
+# ── Fonction : générer les 3 embeddings d'un projet ─────────
+def get_facet_embeddings(project: dict) -> dict:
     """
-    voyage-multilingual-2 : le meilleur modèle Voyage pour
-    du texte mélangé français/anglais/hongrois.
+    Un seul appel Voyage groupant les 3 textes (pas 3 appels séparés),
+    pour ne pas tripler la consommation de l'API ni le temps de
+    backfill par rapport à l'ancien embedding unique.
     """
-    result = voyage.embed(
-        texts=[text],
-        model="voyage-multilingual-2",
-        input_type="document"   # 'document' pour indexation
-    )
-    return result.embeddings[0]
+    texts = [
+        build_thematic_text(project),
+        build_logistics_text(project),
+        build_qualitative_text(project),
+    ]
+    result = voyage.embed(texts=texts, model="voyage-multilingual-2", input_type="document")
+    return {
+        "embedding_thematic":    result.embeddings[0],
+        "embedding_logistics":   result.embeddings[1],
+        "embedding_qualitative": result.embeddings[2],
+    }
 
 
-# ── Fonction : mettre à jour l'embedding d'un projet ────────
+# ── Fonction : mettre à jour les embeddings d'un projet ─────
 def embed_project(project_id: int) -> bool:
     """
-    Récupère un projet depuis Supabase, génère son embedding,
-    le sauvegarde.
+    Récupère un projet depuis Supabase, génère ses 3 embeddings
+    de facette, les sauvegarde.
     """
     # 1. Récupérer le projet
     response = (
@@ -88,29 +110,23 @@ def embed_project(project_id: int) -> bool:
         print(f"  ✗ Projet {project_id} introuvable")
         return False
 
-    # 2. Construire le texte
-    text = build_text_for_embedding(project)
-    print(f"  → Texte construit ({len(text)} caractères)")
+    # 2. Générer les 3 embeddings (thématique / logistique / qualitatif)
+    embeddings = get_facet_embeddings(project)
+    print(f"  → 3 embeddings générés (thematic/logistics/qualitative)")
 
-    # 3. Générer l'embedding
-    embedding = get_embedding(text)
-    print(f"  → Embedding généré ({len(embedding)} dimensions)")
+    # 3. Sauvegarder dans Supabase
+    supabase.table("projects").update(embeddings).eq("id", project_id).execute()
 
-    # 4. Sauvegarder dans Supabase
-    supabase.table("projects").update(
-        {"embedding": embedding}
-    ).eq("id", project_id).execute()
-
-    print(f"  ✓ Projet {project_id} — '{project['name']}' indexé")
+    print(f"  ✓ Projet {project_id} — '{project['name']}' indexé (facettes)")
     return True
 
 
-# ── Fonction : indexer TOUS les projets sans embedding ───────
+# ── Fonction : indexer TOUS les projets sans embedding complet ──
 def embed_all_missing():
     response = (
         supabase.table("projects")
         .select("id, name")
-        .is_("embedding", "null")
+        .or_("embedding_thematic.is.null,embedding_logistics.is.null,embedding_qualitative.is.null")
         .execute()
     )
     projects = response.data
@@ -170,8 +186,8 @@ def search_projects(
     )
     query_embedding = result.embeddings[0]
 
-    # 2. Appeler la fonction SQL de recherche
-    response = supabase.rpc("search_similar_projects", {
+    # 2. Appeler la fonction SQL de recherche multi-facettes
+    response = supabase.rpc("search_projects_by_facets", {
         "query_embedding": query_embedding,
         "match_count": n_results,
         "min_satisfaction": min_satisfaction,
@@ -205,7 +221,10 @@ if __name__ == "__main__":
     print(f"\n→ {len(results)} projets trouvés :\n")
     for r in results:
         sim_pct = round(r['similarity'] * 100, 1)
-        print(f"  [{sim_pct}% similaire] {r['name']}")
+        print(f"  [{sim_pct}% similaire — facette : {r['best_facet']}] {r['name']}")
+        print(f"    thematic={round((r['sim_thematic'] or 0) * 100, 1)}% "
+              f"logistics={round((r['sim_logistics'] or 0) * 100, 1)}% "
+              f"qualitative={round((r['sim_qualitative'] or 0) * 100, 1)}%")
         print(f"    Score : {r['satisfaction_score']}/5 | "
               f"{r['nb_participants']} participants | "
               f"{r['duration_days']} jours")

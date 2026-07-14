@@ -27,133 +27,14 @@ import time
 from pathlib import Path
 
 import streamlit as st
-from dotenv import load_dotenv
-from supabase import create_client
-import voyageai
-from groq import Groq
 import pdfplumber
+
+from retrieval import supabase, voyage, ask
 
 st.set_page_config(page_title="Square of Youth — Project Analysis", page_icon="🌍", layout="wide")
 
-load_dotenv()
-
-MODEL = "llama-3.3-70b-versatile"
 CHUNK_SIZE = 1500
 CHUNK_OVERLAP = 200
-
-
-@st.cache_resource
-def get_clients():
-    supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
-    voyage = voyageai.Client(api_key=os.environ["VOYAGE_API_KEY"])
-    groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
-    return supabase, voyage, groq_client
-
-
-supabase, voyage, groq_client = get_clients()
-
-
-# ── Projects (Square of Youth's own past projects) ──────────
-
-def find_similar_projects(query, n_results=6, min_satisfaction=0.0, project_type=None):
-    result = voyage.embed(texts=[query], model="voyage-multilingual-2", input_type="query")
-    query_embedding = result.embeddings[0]
-    response = supabase.rpc("search_similar_projects", {
-        "query_embedding": query_embedding,
-        "match_count": n_results,
-        "min_satisfaction": min_satisfaction,
-        "project_type_filter": project_type,
-        "min_date": None
-    }).execute()
-    return response.data
-
-
-def build_context_from_projects(projects):
-    if not projects:
-        return "No similar project found in the history."
-    blocks = []
-    for i, p in enumerate(projects, 1):
-        sim_pct = round(p.get("similarity", 0) * 100, 1)
-        blocks.append(f"""
-Project {i} (similarity: {sim_pct}%)
-- Name: {p.get('name', 'N/A')}
-- Type: {p.get('project_type', 'N/A')}
-- Host country: {p.get('host_country', 'N/A')}
-- Partner countries: {', '.join(p.get('partner_countries') or [])}
-- Participants: {p.get('nb_participants', 'N/A')}
-- Duration: {p.get('duration_days', 'N/A')} days
-- Theme: {p.get('theme', 'N/A')}
-- Satisfaction score: {p.get('satisfaction_score', 'N/A')}/5
-- Strengths: {p.get('strengths', 'N/A')}
-- Weaknesses: {p.get('weaknesses', 'N/A')}
-- Lessons learned: {p.get('lessons', 'N/A')}
-""".strip())
-    return "\n\n".join(blocks)
-
-
-# ── Documents (reference material: guidelines, articles, notes) ──
-
-def find_similar_documents(query, n_results=4):
-    result = voyage.embed(texts=[query], model="voyage-multilingual-2", input_type="query")
-    query_embedding = result.embeddings[0]
-    response = supabase.rpc("search_similar_documents", {
-        "query_embedding": query_embedding,
-        "match_count": n_results,
-    }).execute()
-    return response.data
-
-
-def build_context_from_documents(documents):
-    if not documents:
-        return "No reference document found."
-    blocks = []
-    for i, d in enumerate(documents, 1):
-        sim_pct = round(d.get("similarity", 0) * 100, 1)
-        blocks.append(f"""
-Reference {i} (similarity: {sim_pct}%) — from "{d.get('title', 'N/A')}" ({d.get('source_type', 'N/A')})
-{d.get('content', '')}
-""".strip())
-    return "\n\n".join(blocks)
-
-
-# ── Main analysis function ───────────────────────────────────
-
-def ask(question, n_similar=6, min_satisfaction=0.0):
-    similar_projects = find_similar_projects(question, n_results=n_similar, min_satisfaction=min_satisfaction)
-    similar_documents = find_similar_documents(question, n_results=4)
-
-    project_context = build_context_from_projects(similar_projects)
-    document_context = build_context_from_documents(similar_documents)
-
-    prompt = f"""You are an analyst supporting Square of Youth, an NGO coordinating EU-funded Erasmus+ youth exchanges.
-
-You have access to two types of sources:
-1. Square of Youth's own past projects (grant applications and feedback)
-2. Reference documents that may include official guidelines, criteria, or other knowledge added to the system
-
-The question or scenario being asked:
-"{question}"
-
-PAST PROJECTS:
-{project_context}
-
-REFERENCE DOCUMENTS:
-{document_context}
-
-Instructions:
-- Answer in English, regardless of the language of the question.
-- Clearly distinguish between claims based on Square of Youth's own project history versus claims based on reference documents (official guidelines etc.) — cite which source each point comes from.
-- If neither source supports a confident answer, say so directly rather than speculating.
-- Structure your answer with clear sections appropriate to the question.
-- Be concise but substantive.
-"""
-
-    response = groq_client.chat.completions.create(
-        model=MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1800,
-    )
-    return response.choices[0].message.content, len(similar_projects), len(similar_documents)
 
 
 # ── Document ingestion (used by the upload feature) ──────────
@@ -232,23 +113,51 @@ with tab_ask:
             min_satisfaction = st.slider("Minimum satisfaction score of referenced past projects", 0.0, 5.0, 0.0, 0.5)
         with col2:
             n_similar = st.slider("Number of past projects to consider", 1, 10, 6)
+        use_decomposition = st.checkbox(
+            "Use multi-angle query decomposition (slower, more thorough)",
+            value=True,
+            help="Splits your question into a few focused sub-questions (e.g. thematic fit, logistics, budget) and retrieves evidence for each before answering, instead of a single search.",
+        )
         submitted = st.form_submit_button("Ask")
 
     if submitted and question.strip():
         with st.spinner("Searching past projects and reference documents, then generating analysis..."):
-            answer, n_proj, n_doc = ask(question, n_similar=n_similar, min_satisfaction=min_satisfaction)
+            answer, subqueries, projects, documents = ask(
+                question, n_similar=n_similar, min_satisfaction=min_satisfaction,
+                use_decomposition=use_decomposition,
+            )
         st.session_state.history.insert(0, {
             "question": question,
             "answer": answer,
-            "n_proj": n_proj,
-            "n_doc": n_doc,
+            "subqueries": subqueries,
+            "projects": projects,
+            "documents": documents,
         })
 
     for entry in st.session_state.history:
         with st.container(border=True):
             st.markdown(f"**Q: {entry['question']}**")
-            st.caption(f"Based on {entry['n_proj']} similar past project(s) and {entry['n_doc']} reference document chunk(s)")
+            st.caption(f"Based on {len(entry['projects'])} similar past project(s) and {len(entry['documents'])} reference document chunk(s)")
             st.markdown(entry["answer"])
+            with st.expander("How this answer was built"):
+                st.markdown("**Angles explored:**")
+                if len(entry["subqueries"]) > 1:
+                    for sq in entry["subqueries"]:
+                        st.write(f"- {sq}")
+                else:
+                    st.write("(no decomposition — question used as-is)")
+                st.markdown("**Matched projects:**")
+                for p in entry["projects"]:
+                    matched_by = ", ".join(sorted(p.get("_matched_by", []))) or "n/a"
+                    facet = f", best facet: {p['best_facet']}" if p.get("best_facet") else ""
+                    st.write(f"- {p['name']} — matched via {matched_by}{facet}")
+                st.markdown("**Matched reference chunks:**")
+                if entry["documents"]:
+                    for d in entry["documents"]:
+                        matched_by = ", ".join(sorted(d.get("_matched_by", []))) or "n/a"
+                        st.write(f"- {d['title']} (chunk {d['chunk_index']}) — matched via {matched_by}")
+                else:
+                    st.write("(none)")
 
 # --- Tab 2: Document upload ---
 with tab_upload:
