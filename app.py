@@ -33,6 +33,8 @@ import voyageai
 from groq import Groq
 import pdfplumber
 
+st.set_page_config(page_title="Square of Youth — Project Analysis", page_icon="🌍", layout="wide")
+
 load_dotenv()
 
 MODEL = "llama-3.3-70b-versatile"
@@ -208,8 +210,6 @@ def ingest_document(file_path, title, source_type, progress_callback=None):
 
 
 # ── Streamlit UI ──────────────────────────────────────────────
-
-st.set_page_config(page_title="Square of Youth — Project Analysis", page_icon="🌍", layout="wide")
 
 st.title("🌍 Square of Youth — Project Analysis Assistant")
 
