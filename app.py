@@ -23,6 +23,7 @@ Requires the same .env file used by your other scripts:
 """
 
 import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -183,7 +184,7 @@ with tab_upload:
         results = []
         for uploaded_file in uploaded_files:
             title = Path(uploaded_file.name).stem
-            temp_path = Path(f"/tmp/{uploaded_file.name}")
+            temp_path = Path(tempfile.gettempdir()) / uploaded_file.name
             temp_path.write_bytes(uploaded_file.getbuffer())
 
             status_placeholder = st.empty()
