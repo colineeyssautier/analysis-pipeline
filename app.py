@@ -36,6 +36,7 @@ st.set_page_config(page_title="Square of Youth — Project Analysis", page_icon=
 
 CHUNK_SIZE = 1500
 CHUNK_OVERLAP = 200
+EMBED_BATCH_SIZE = 10
 
 
 # ── Document ingestion (used by the upload feature) ──────────
@@ -75,18 +76,22 @@ def ingest_document(file_path, title, source_type, progress_callback=None):
 
     chunks = chunk_text(text)
 
-    for i, chunk in enumerate(chunks):
-        result = voyage.embed(texts=[chunk], model="voyage-multilingual-2", input_type="document")
-        embedding = result.embeddings[0]
-        supabase.table("documents").insert({
-            "title": title,
-            "source_type": source_type,
-            "chunk_index": i,
-            "content": chunk,
-            "embedding": embedding,
-        }).execute()
+    for batch_start in range(0, len(chunks), EMBED_BATCH_SIZE):
+        batch = chunks[batch_start:batch_start + EMBED_BATCH_SIZE]
+        result = voyage.embed(texts=batch, model="voyage-multilingual-2", input_type="document")
+        rows = [
+            {
+                "title": title,
+                "source_type": source_type,
+                "chunk_index": batch_start + i,
+                "content": chunk,
+                "embedding": embedding,
+            }
+            for i, (chunk, embedding) in enumerate(zip(batch, result.embeddings))
+        ]
+        supabase.table("documents").insert(rows).execute()
         if progress_callback:
-            progress_callback(i + 1, len(chunks))
+            progress_callback(min(batch_start + EMBED_BATCH_SIZE, len(chunks)), len(chunks))
 
     return {"status": "success", "reason": None, "chunks": len(chunks)}
 
