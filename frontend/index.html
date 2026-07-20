@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Square of Youth — Project Analysis Assistant</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="page">
+    <div class="notebook">
+      <div class="card">
+        <header class="card-header">
+          <h1>🌍 Square of Youth</h1>
+          <p>Project Analysis Assistant</p>
+        </header>
+
+        <section id="view-chat" class="view active">
+          <div class="chat-layout">
+            <div class="chat-main">
+              <div id="messages" class="messages"></div>
+
+              <form id="ask-form" class="input-row">
+                <textarea
+                  id="question"
+                  rows="2"
+                  placeholder="Ask anything about project viability, risks, or patterns... (Enter to send, Shift+Enter for a new line)"
+                ></textarea>
+                <button type="button" id="add-doc-btn" class="add-btn" title="Add reference documents">+</button>
+              </form>
+
+              <div class="options-row">
+                <label>
+                  Min. satisfaction
+                  <input type="range" id="min-satisfaction" min="0" max="5" step="0.5" value="0" />
+                  <span id="min-satisfaction-val">0</span>
+                </label>
+                <label>
+                  Past projects considered
+                  <input type="range" id="n-similar" min="1" max="10" step="1" value="6" />
+                  <span id="n-similar-val">6</span>
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="use-decomposition" checked />
+                  Multi-angle decomposition
+                </label>
+              </div>
+            </div>
+
+            <aside id="upload-panel" class="upload-panel hidden">
+              <h3>Document upload</h3>
+              <div id="upload-list"></div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="view-docs" class="view">
+          <h2>Documents currently in the knowledge base</h2>
+          <div id="docs-list" class="docs-list"></div>
+        </section>
+
+        <nav class="tab-strip">
+          <button class="tab active" data-view="view-chat">Chat</button>
+          <button class="tab" data-view="view-docs">See reference documents</button>
+        </nav>
+      </div>
+    </div>
+  </div>
+
+  <div id="upload-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Add reference documents</h3>
+      <label>
+        Document type
+        <select id="source-type">
+          <option value="reference">reference</option>
+          <option value="eu_guideline">eu_guideline</option>
+          <option value="article">article</option>
+          <option value="internal_note">internal_note</option>
+          <option value="other">other</option>
+        </select>
+      </label>
+      <input type="file" id="file-input" accept="application/pdf" multiple />
+      <div class="modal-actions">
+        <button type="button" id="modal-cancel">Cancel</button>
+        <button type="button" id="modal-upload">Upload</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>
