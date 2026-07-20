@@ -80,7 +80,11 @@
           <option value="other">other</option>
         </select>
       </label>
-      <input type="file" id="file-input" accept="application/pdf" multiple />
+      <div id="drop-zone" class="drop-zone">
+        <p>Drag &amp; drop PDFs here, or click to browse</p>
+        <input type="file" id="file-input" accept="application/pdf" multiple hidden />
+      </div>
+      <div id="file-list" class="file-list"></div>
       <div class="modal-actions">
         <button type="button" id="modal-cancel">Cancel</button>
         <button type="button" id="modal-upload">Upload</button>

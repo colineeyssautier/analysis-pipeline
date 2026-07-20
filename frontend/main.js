@@ -23,6 +23,8 @@ const uploadModal = document.getElementById("upload-modal");
 const modalCancel = document.getElementById("modal-cancel");
 const modalUpload = document.getElementById("modal-upload");
 const fileInput = document.getElementById("file-input");
+const dropZone = document.getElementById("drop-zone");
+const fileListEl = document.getElementById("file-list");
 const sourceTypeEl = document.getElementById("source-type");
 const uploadPanel = document.getElementById("upload-panel");
 const uploadList = document.getElementById("upload-list");
@@ -161,9 +163,49 @@ questionEl.addEventListener("keydown", (e) => {
 addDocBtn.addEventListener("click", () => {
     uploadModal.classList.remove("hidden");
 });
+function renderFileList() {
+    const files = fileInput.files;
+    fileListEl.innerHTML = "";
+    if (!files || files.length === 0)
+        return;
+    for (const file of Array.from(files)) {
+        const div = document.createElement("div");
+        div.textContent = file.name;
+        fileListEl.appendChild(div);
+    }
+}
+function addFiles(newFiles) {
+    const dt = new DataTransfer();
+    if (fileInput.files) {
+        for (const existing of Array.from(fileInput.files))
+            dt.items.add(existing);
+    }
+    for (const file of Array.from(newFiles)) {
+        if (file.type === "application/pdf" || /\.pdf$/i.test(file.name))
+            dt.items.add(file);
+    }
+    fileInput.files = dt.files;
+    renderFileList();
+}
+dropZone.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => renderFileList());
+dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+});
+dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("dragover");
+});
+dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+    if (e.dataTransfer?.files?.length)
+        addFiles(e.dataTransfer.files);
+});
 modalCancel.addEventListener("click", () => {
     uploadModal.classList.add("hidden");
     fileInput.value = "";
+    fileListEl.innerHTML = "";
 });
 modalUpload.addEventListener("click", () => {
     const files = fileInput.files;
@@ -171,6 +213,7 @@ modalUpload.addEventListener("click", () => {
         return;
     uploadModal.classList.add("hidden");
     uploadPanel.classList.remove("hidden");
+    fileListEl.innerHTML = "";
     const formData = new FormData();
     formData.append("source_type", sourceTypeEl.value);
     const entries = [];

@@ -365,6 +365,44 @@ body {
   gap: 10px;
 }
 
+/* Drag & drop zone for the upload modal */
+.drop-zone {
+  border: 2px dashed var(--yellow);
+  border-radius: 12px;
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #8a6d00;
+  background: var(--yellow-light);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.drop-zone p {
+  margin: 0;
+  pointer-events: none;
+}
+
+.drop-zone:hover {
+  background: #fbe9b8;
+}
+
+.drop-zone.dragover {
+  background: var(--yellow);
+  border-color: #b8860b;
+  border-style: solid;
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: #555;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
 .modal-actions button,
 .modal-content select {
   border-radius: 8px;
