@@ -1,9 +1,8 @@
 """
 server.py
 =========
-FastAPI backend for the JS/TS web interface (frontend/), replacing the
-Streamlit UI (app.py). Wraps the same retrieval + ingestion logic so
-the frontend only talks HTTP/JSON.
+FastAPI backend for the JS/TS web interface (frontend/). Wraps the
+retrieval + ingestion logic so the frontend only talks HTTP/JSON.
 
 Installation:
     pip install fastapi uvicorn python-multipart
@@ -30,6 +29,11 @@ from ingestion import ingest_document
 from retrieval import ask, supabase
 
 app = FastAPI(title="Square of Youth — Project Analysis Assistant")
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 
 class AskRequest(BaseModel):

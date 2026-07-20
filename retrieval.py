@@ -1,9 +1,8 @@
 """
 retrieval.py
 ============
-Shared retrieval + analysis logic used by both app.py (Streamlit UI)
-and 03_analyze_with_groq.py (CLI). Previously duplicated between the
-two — factored out here so it's only written once.
+Shared retrieval + analysis logic used by both server.py (FastAPI web
+interface) and 03_analyze_with_groq.py (CLI).
 
 Retrieval pipeline, in three layers:
 1. Raw search primitives — vector (facet-aware for projects) and

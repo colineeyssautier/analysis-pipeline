@@ -50,8 +50,8 @@ mois selon le nombre de questions posées).
 
 ## Utiliser l'outil
 
-L'interface principale est `app.py`, une application Streamlit avec deux
-onglets :
+L'interface principale est une page web (`frontend/`, en HTML/CSS/TypeScript)
+servie par un backend FastAPI (`server.py`), avec deux fonctions :
 
 - **Poser une question** — on écrit sa question (dans n'importe quelle
   langue), l'outil cherche les projets et documents pertinents et génère une
@@ -60,7 +60,8 @@ onglets :
   automatiquement découpé, indexé, et devient utilisable dans les réponses.
   Pas besoin de toucher au code.
 
-Pour lancer l'application : `streamlit run app.py`.
+Pour lancer l'application : `uvicorn server:app --reload`, puis ouvrir
+`http://127.0.0.1:8000`.
 
 Une version en ligne de commande existe aussi (`03_analyze_with_groq.py`), si
 on préfère poser des questions sans interface graphique.

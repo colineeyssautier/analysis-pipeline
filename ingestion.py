@@ -2,7 +2,7 @@
 ingestion.py
 ============
 Document ingestion pipeline (PDF -> text -> chunks -> embeddings -> Supabase).
-Shared by app.py (Streamlit UI) and server.py (FastAPI web interface).
+Used by server.py (FastAPI web interface).
 """
 
 import pdfplumber
