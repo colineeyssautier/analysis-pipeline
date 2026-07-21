@@ -198,9 +198,21 @@ dropZone.addEventListener("dragleave", () => {
 });
 dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
+    e.stopPropagation();
     dropZone.classList.remove("dragover");
     if (e.dataTransfer?.files?.length)
         addFiles(e.dataTransfer.files);
+});
+// Without these, dropping a file anywhere outside the exact drop-zone bounds
+// (e.g. the modal isn't open yet) falls through to the browser's default
+// behavior of navigating to/opening the file instead of doing nothing.
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => {
+    e.preventDefault();
+    if (!e.dataTransfer?.files?.length)
+        return;
+    uploadModal.classList.remove("hidden");
+    addFiles(e.dataTransfer.files);
 });
 modalCancel.addEventListener("click", () => {
     uploadModal.classList.add("hidden");
