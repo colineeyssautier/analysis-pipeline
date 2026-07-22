@@ -5,13 +5,18 @@ Document ingestion pipeline (PDF -> text -> chunks -> embeddings -> Supabase).
 Used by server.py (FastAPI web interface).
 """
 
+import time
+
 import pdfplumber
+from voyageai.error import RateLimitError
 
 from retrieval import supabase, voyage
 
 CHUNK_SIZE = 1500
 CHUNK_OVERLAP = 200
 EMBED_BATCH_SIZE = 10
+EMBED_MAX_RETRIES = 3
+EMBED_RETRY_DELAY = 25  # seconds, matches 02_embed_and_store.py's rate-limit backoff
 
 
 def extract_text(pdf_path):
@@ -48,10 +53,19 @@ def ingest_document(file_path, title, source_type, progress_callback=None):
         return {"status": "failed", "reason": "no extractable text (scanned PDF? needs OCR)", "chunks": 0}
 
     chunks = chunk_text(text)
+    print(f"Processing: {title} ({len(chunks)} chunks)")
 
     for batch_start in range(0, len(chunks), EMBED_BATCH_SIZE):
         batch = chunks[batch_start:batch_start + EMBED_BATCH_SIZE]
-        result = voyage.embed(texts=batch, model="voyage-multilingual-2", input_type="document")
+        for attempt in range(EMBED_MAX_RETRIES):
+            try:
+                result = voyage.embed(texts=batch, model="voyage-multilingual-2", input_type="document")
+                break
+            except RateLimitError:
+                if attempt == EMBED_MAX_RETRIES - 1:
+                    raise
+                print(f"  Rate limit, attente {EMBED_RETRY_DELAY}s (tentative {attempt + 1}/{EMBED_MAX_RETRIES})...")
+                time.sleep(EMBED_RETRY_DELAY)
         rows = [
             {
                 "title": title,
@@ -66,4 +80,5 @@ def ingest_document(file_path, title, source_type, progress_callback=None):
         if progress_callback:
             progress_callback(min(batch_start + EMBED_BATCH_SIZE, len(chunks)), len(chunks))
 
+    print(f"  -> Ingested ({len(chunks)} chunks)")
     return {"status": "success", "reason": None, "chunks": len(chunks)}

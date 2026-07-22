@@ -89,6 +89,9 @@ def api_upload(source_type: str = Form(...), files: list[UploadFile] = File(...)
         temp_path.write_bytes(uploaded.file.read())
         try:
             result = ingest_document(temp_path, title, source_type)
+        except Exception as exc:
+            print(f"  [!] Failed: {title} — {exc}")
+            result = {"status": "failed", "reason": str(exc), "chunks": 0}
         finally:
             temp_path.unlink(missing_ok=True)
         results.append({"title": title, **result})
